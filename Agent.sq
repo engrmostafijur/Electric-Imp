@@ -1,0 +1,125 @@
+// When Device sends new readings, Run this!
+local size = 435;
+local tempRecorded1 = array(size);
+local tempRecorded2 = array(size);
+local tempRecorded3 = array(435);
+
+local finalArray = array(size);
+local count = 0;
+//mt.rawget("name")
+
+device.on("receiver1" function(msg) {
+  tempRecorded1[count1] = msg;
+  local checksum = msg.temp+msg.time;
+  server.log(""+msg.time+","+msg.temp+","+checksum);
+  count1++;
+});
+
+device.on("receiver2" function(msg) {
+  tempRecorded2[count2] = msg;
+  count2++;
+});
+
+device.on("receiver3" function(msg) {
+  tempRecorded3[count3] =msg;
+  count3++;
+});
+
+device.on("byzantine" function(msg) {
+  server.log("agent start executing!");
+  combine(1);
+  combine(2);
+  
+  while(count < size){
+    local sensorReading = finalArray[count];
+    senddatatoserver(sensorReading);
+    count++;
+  }
+});
+
+function combine(process){
+  if(process==1){
+    while(count<size){
+      local sensorReading1 = tempRecorded1[count];
+      local sensorReading2 = tempRecorded2[count];
+      if(sensorReading1.index < sensorReading2.index){
+        finalArray[sensorReading1.index] = sensorReading1;
+      }else if(sensorReading2.index < sensorReading1.index){
+        finalArray[sensorReading1.index] = sensorReading1;
+      }else if(sensorReading1.index == sensorReading2.index){
+        finalArray[sensorReading1.index] = sensorReading1;
+      }
+      count++;
+    }
+    count=0;
+  }else if(process==2){
+    while(count<size){
+      local sensorReading = finalArray[count];
+      local sensorReading3 = tempRecorded3[count];
+      if(sensorReading.index < sensorReading3.index){
+        finalArray[sensorReading.index] = sensorReading3;
+      }else if(sensorReading3.index < sensorReading.index){
+        finalArray[sensorReading3.index] = sensorReading3;
+      }else if(sensorReading.index == sensorReading3.index){
+        finalArray[sensorReading.index] = sensorReading;
+      }
+      count++;
+    }
+    count=0;
+  }
+}
+
+function senddatatoserver(sensorReading){
+  //Plotly Data Object
+  local data = [{
+    x = sensorReading.time, // Time Stamp from Device
+    y = sensorReading.temp, // Sensor Reading from Device
+  }];
+  server.log("-------------------------"+sensorReading.index);
+
+  // // Plotly Layout Object
+  local layout = {
+    fileopt = "extend",
+    filename = "byzantine101feet",
+  };
+    
+  //Setting up Data to be POSTed
+  local payload = {
+    un = "charanjp",
+    key = "oc930by4gy",
+    origin = "plot",
+    platform = "electricimp",
+    args = http.jsonencode(data),
+    kwargs = http.jsonencode(layout),
+    version = "0.0.1"
+  };
+        
+  //encode data and log
+  local headers = { "Content-Type" : "application/json" };
+  local body = http.urlencode(payload);
+  local url = "https://plot.ly/clientresp";
+  HttpPostWrapper(url, headers, body, true);
+}
+
+// Http Request Handler
+function HttpPostWrapper (url, headers, string, log) {
+  local request = http.post(url, headers, string);
+  local response = request.sendsync();
+  if (log)
+    server.log(http.jsonencode(response));
+  return response;
+}
+
+http.onrequest(function(request, response) {
+   // do things
+   // send a response back.. 
+  response.send(200, "OK");
+  if (device.isconnected())
+  {
+    server.log("aaa");
+    device.send("sendDataNoneTolerance", size); // start the UART polling, this function continues to call itself
+  }
+  else{
+        server.log("bbb");
+  }
+});
